@@ -3,3 +3,4 @@ A map where users can write search terms (like "bar" or "cafe"), to create a hea
 
 RUN the following:
 npm run dev
+python3 server.py
