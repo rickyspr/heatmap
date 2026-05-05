@@ -21,25 +21,43 @@ function HeatmapLayer({ points }) {
   const map = useMap();
   
   useEffect(() => {
-    if (!map || !points) return;
+    if (!map || !points || points.length === 0) return;
     
-    // Dynamisk import av leaflet.heat
     import('leaflet.heat').then(() => {
-      // Rensa gamla heatmap-lager
       map.eachLayer((layer) => {
-        if (layer._heat) {
-          map.removeLayer(layer);
-        }
+        if (layer._heat) map.removeLayer(layer);
       });
 
-      if (points.length > 0) {
-        L.heatLayer(points, {
-          radius: 40, 
-          blur: 35,   
-          maxZoom: 17,
-          gradient: { 0.4: 'blue', 0.65: 'lime', 1: 'red' }
-        }).addTo(map);
+      // --- LOGIK FÖR RELATIVITET ---
+      // Om vi har massor av punkter (restauranger), behöver vi ett högre 'max' 
+      // för att inte hela kartan ska bli röd direkt.
+      // Om vi har få punkter (bibliotek), sänker vi 'max' så att även små 
+      // kluster ser "heta" ut.
+      
+      const pointCount = points.length;
+      let dynamicMax = 1.0;
+
+      if (pointCount > 1000) {
+        dynamicMax = 15; // Kräv mycket överlapp för rött (t.ex. Manhattan)
+      } else if (pointCount > 500) {
+        dynamicMax = 8;
+      } else if (pointCount < 50) {
+        dynamicMax = 0.5; // Gör gles data mycket tydligare
+      } else {
+        dynamicMax = 2.0;
       }
+
+      L.heatLayer(points, {
+        radius: 100,      // Något mindre radius gör det oftast lättare att se kluster
+        blur: 15,   
+        maxZoom: 17,
+        max: dynamicMax, // Här sker magin!
+        gradient: { 
+          0.6: 'yellow',   // Inget syns under 40% av lokalt max (tar bort molnet)
+          0.7: 'orange', 
+          1.0: 'red' 
+        }
+      }).addTo(map);
     });
   }, [map, points]);
 

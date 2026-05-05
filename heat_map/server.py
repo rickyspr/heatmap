@@ -41,7 +41,7 @@ def handle_search():
                 lat = element.get('lat') or element.get('center', {}).get('lat')
                 lon = element.get('lon') or element.get('center', {}).get('lon')
                 if lat and lon:
-                    points_data.append([lat, lon, 1.0])
+                    points_data.append([lat, lon, 1])
                     
             print(f"Hittade {len(points_data)} resultat!")
             return jsonify({

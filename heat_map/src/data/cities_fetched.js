@@ -1,4 +1,6 @@
 export const CITIES = [
+  { name: 'Stockholm', lat: 59.3294, lon: 18.0687 },
+  { name: 'New York City', lat: 40.7143, lon: -74.0060 },
   { name: 'Warīsān', lat: 25.1674, lon: 55.4071 },
   { name: 'Umm Al Quwain City', lat: 25.5647, lon: 55.5552 },
   { name: 'Ţarīf Kalbā', lat: 25.0695, lon: 56.3312 },
@@ -9735,7 +9737,6 @@ export const CITIES = [
   { name: 'Uppsala', lat: 59.8588, lon: 17.6389 },
   { name: 'Täby', lat: 59.4439, lon: 18.0687 },
   { name: 'Sundsvall', lat: 62.3913, lon: 17.3063 },
-  { name: 'Stockholm', lat: 59.3294, lon: 18.0687 },
   { name: 'Solna', lat: 59.3600, lon: 18.0009 },
   { name: 'Sollentuna', lat: 59.4280, lon: 17.9509 },
   { name: 'Södertälje', lat: 59.1955, lon: 17.6253 },
@@ -11157,7 +11158,6 @@ export const CITIES = [
   { name: 'Mott Haven', lat: 40.8090, lon: -73.9229 },
   { name: 'Mount Vernon', lat: 40.9126, lon: -73.8371 },
   { name: 'New Rochelle', lat: 40.9115, lon: -73.7823 },
-  { name: 'New York City', lat: 40.7143, lon: -74.0060 },
   { name: 'Ozone Park', lat: 40.6768, lon: -73.8438 },
   { name: 'Park Slope', lat: 40.6701, lon: -73.9860 },
   { name: 'Parkchester', lat: 40.8390, lon: -73.8604 },
