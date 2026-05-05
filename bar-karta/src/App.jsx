@@ -3,29 +3,33 @@ import { MapContainer, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// --- UPPDATERAD KOMPONENT MED ROBUST RENSNING ---
+// list of cities with their coordinates and OSM area IDs, imported from a separate file for better organization
+import { CITIES } from './data/cities';
+
+
+// Hjälpkomponent för att flytta kartan när man byter stad
+function MapUpdater({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    map.flyTo(center, 13); // Animerar kameran till den nya staden
+  }, [center, map]);
+  return null;
+}
+
 function HeatmapLayer({ points }) {
   const map = useMap();
   
   useEffect(() => {
     if (!map || !points) return;
     
-    // 1. Importera leaflet.heat dynamiskt
     import('leaflet.heat').then(() => {
-      
-      // BRUTE FORCE RENSNING:
-      // Eftersom den dynamiska importen är långsam kan gamla heatmap-lager 
-      // "fastna" på kart-objektet utan att React vet om det.
-      // Vi tvingar Leaflet att ta bort ALLA lager som ser ut som heatmaps.
+      // Ta bort gamla heatmap-lager först
       map.eachLayer((layer) => {
-        // Vi identifierar heatmap-lager genom att leta efter en specifik 
-        // intern property (_heat) som leaflet.heat lägger till.
         if (layer._heat) {
           map.removeLayer(layer);
         }
       });
 
-      // 2. Om vi faktiskt har nya punkter, skapa ett nytt lager
       if (points.length > 0) {
         L.heatLayer(points, {
           radius: 40, 
@@ -35,36 +39,23 @@ function HeatmapLayer({ points }) {
         }).addTo(map);
       }
     });
-
-    // Vi tar bort den gamla rensnings-useEffecten eftersom vi sköter det manuellt ovan.
-  }, [map, points]); // Denna körs nu när punkterna ändras
+  }, [map, points]);
 
   return null;
 }
 
 export default function App() {
-  // Behöver inte längre bars.json eller heatmapKey, vi gör en renare setup
   const [barData, setBarData] = useState([]);
   const [searchQuery, setSearchQuery] = useState(''); 
   const [isSearching, setIsSearching] = useState(false);
-
-  // Laddar in den första datan
-  useEffect(() => {
-    fetch('/bars.json')
-      .then(response => response.json())
-      .then(data => {
-        setBarData(data);
-      })
-      .catch(error => console.error("Kunde inte ladda bardata:", error));
-  }, []);
+  
+  const [selectedCity, setSelectedCity] = useState(CITIES[0]);
 
   const handleSearch = async () => {
     if (!searchQuery) return; 
     
     setIsSearching(true);
-    // Vi rensar INTE data här, vi låter HeatmapLayer hantera det manuellt
-    // genom att uppdatera barData med en tom lista först, för en snyggare övergång.
-    setBarData([]); 
+    setBarData([]);
 
     try {
       const response = await fetch('http://localhost:5001/api/run-script', {
@@ -72,30 +63,77 @@ export default function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query: searchQuery }) 
+        body: JSON.stringify({ 
+          query: searchQuery,
+          areaId: selectedCity.areaId 
+        }) 
       });
 
       const result = await response.json();
       
       if (result.status === "success") {
-        console.log(`Laddade in ${result.points.length} nya punkter för "${searchQuery}".`);
-        // Sätt de nya punkterna. HeatmapLayer kommer nu känna av ändringen och köra sin rensning.
         setBarData(result.points);
       } else {
-        console.error("Ett fel uppstod på servern:", result.message);
+        alert("Ett fel uppstod: " + result.message);
       }
 
     } catch (error) {
-      console.error("Fel vid kommunikation med Python:", error);
+      console.error("Fel vid kommunikation:", error);
     } finally {
       setIsSearching(false);
     }
   };
 
+  const handleCityChange = (event) => {
+    const cityName = event.target.value;
+    const newCity = CITIES.find(city => city.name === cityName);
+    if (newCity) {
+      setSelectedCity(newCity);
+    }
+  };
+
   return (
-    <div style={{ height: '100vh', width: '100vw', position: 'relative' }}>
+    // Nu använder vi position: relative så att kartan täcker allt och gränssnittet svävar ovanpå
+    <div style={{ position: 'relative', height: '100vh', width: '100vw' }}>
       
-      {/* --- SÖKMENYN OVERLAY --- */}
+      {/* VÄNSTER: FLYTANDE STADSMENY */}
+      <div style={{ 
+        position: 'absolute', 
+        top: '20px', 
+        left: '60px', // Flyttad lite till höger så den inte döljer zoom-knapparna
+        zIndex: 1000,
+        backgroundColor: 'white',
+        padding: '10px',
+        borderRadius: '8px',
+        boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px'
+      }}>
+        <label style={{ fontWeight: 'bold', color: '#333' }}>Stad:</label>
+        <select 
+          value={selectedCity.name} 
+          onChange={handleCityChange}
+          style={{
+            padding: '8px',
+            borderRadius: '4px',
+            border: '1px solid #ccc',
+            fontSize: '14px',
+            cursor: 'pointer',
+            outline: 'none',
+            backgroundColor: 'white',
+            color: '#333'
+          }}
+        >
+          {CITIES.map(city => (
+            <option key={city.name} value={city.name}>
+              {city.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* HÖGER: SÖKFÄLT (Oförändrad layout, men svävar över kartan) */}
       <div style={{
         position: 'absolute', top: '20px', right: '20px', zIndex: 1000, 
         backgroundColor: 'white', padding: '10px', borderRadius: '8px',
@@ -105,32 +143,36 @@ export default function App() {
           type="text" 
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Sök (t.ex. cafe)"
+          placeholder={`Sök i ${selectedCity.name}...`}
           style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
         />
         <button 
           onClick={handleSearch} 
           disabled={isSearching}
-          style={{ padding: '8px 16px', cursor: 'pointer', borderRadius: '4px' }}
+          style={{ 
+            padding: '8px 16px', cursor: 'pointer', borderRadius: '4px',
+            backgroundColor: isSearching ? '#ccc' : '#4CAF50',
+            color: 'white', border: 'none'
+          }}
         >
           {isSearching ? 'Söker...' : 'Sök'}
         </button>
       </div>
 
+      {/* KARTAN */}
       <MapContainer 
-        center={[40.7128, -74.0060]} 
+        center={[selectedCity.lat, selectedCity.lon]} 
         zoom={13} 
         style={{ height: '100%', width: '100%' }}
       >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          attribution='&copy; OpenStreetMap contributors'
         />
-        
-        {/* Alltid rendera HeatmapLayer, låt den hantera rensning/ritning internt via points */}
+        <MapUpdater center={[selectedCity.lat, selectedCity.lon]} />
         <HeatmapLayer points={barData} />
-        
       </MapContainer>
+      
     </div>
   );
 }

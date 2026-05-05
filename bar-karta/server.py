@@ -3,22 +3,24 @@ from flask_cors import CORS
 import requests
 
 app = Flask(__name__)
-CORS(app) # Tillåter React att prata med Python
+CORS(app) 
 
 @app.route('/api/run-script', methods=['POST'])
 def handle_search():
     data = request.get_json()
-    # Hämta sökordet från React, standardvärde 'bar|pub' om det är tomt
     search_query = data.get('query', 'bar|pub') 
     
-    print(f"Hämtar data för '{search_query}' i Paris via OSM...")
+    # Ta emot areaId från React (Standard är Paris area-id om inget skickas)
+    area_id = data.get('areaId', '3600071525')
+    
+    print(f"Hämtar data för '{search_query}' i område {area_id} via OSM...")
     
     url = "http://overpass-api.de/api/interpreter"
     
-    # Vi sätter in sökordet dynamiskt i queryn med en f-string
+    # Använd det dynamiska area_id:t i sökningen
     query = f"""
-    [out:json][timeout:30];
-    area(id:3600175905)->.searchArea;
+    [out:json][timeout:90];
+    area(id:{area_id})->.searchArea;
     (
       node["amenity"~"{search_query}"](area.searchArea);
       way["amenity"~"{search_query}"](area.searchArea);
@@ -27,31 +29,36 @@ def handle_search():
     """
     
     headers = {'User-Agent': 'MapProject/1.0'}
-    response = requests.get(url, params={'data': query}, headers=headers)
     
-    if response.status_code == 200:
-        osm_data = response.json()
-        points_data = []
+    try:
+        response = requests.get(url, params={'data': query}, headers=headers, timeout=95)
         
-        for element in osm_data['elements']:
-            lat = element.get('lat') or element.get('center', {}).get('lat')
-            lon = element.get('lon') or element.get('center', {}).get('lon')
-            if lat and lon:
-                points_data.append([lat, lon, 1.0])
-                
-        print(f"Hittade {len(points_data)} '{search_query}' i Paris!")
-        
-        # Vi skickar tillbaka resultatet DIREKT till React
-        return jsonify({
-            "status": "success",
-            "points": points_data
-        })
-    else:
-        print(f"Felkod från Overpass: {response.status_code}")
+        if response.status_code == 200:
+            osm_data = response.json()
+            points_data = []
+            
+            for element in osm_data['elements']:
+                lat = element.get('lat') or element.get('center', {}).get('lat')
+                lon = element.get('lon') or element.get('center', {}).get('lon')
+                if lat and lon:
+                    points_data.append([lat, lon, 1.0])
+                    
+            print(f"Hittade {len(points_data)} resultat!")
+            return jsonify({
+                "status": "success",
+                "points": points_data
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": f"Kunde inte hämta data. Statuskod: {response.status_code}"
+            }), 500
+            
+    except requests.exceptions.Timeout:
         return jsonify({
             "status": "error",
-            "message": f"Kunde inte hämta data. Statuskod: {response.status_code}"
-        }), 500
+            "message": "Overpass-servern tog för lång tid på sig (Timeout)."
+        }), 504
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
