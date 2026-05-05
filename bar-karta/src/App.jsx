@@ -1,17 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { MapContainer, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// list of cities with their coordinates and OSM area IDs, imported from a separate file for better organization
-import { CITIES } from './data/cities';
+// list of cities with their coordinates
+import { CITIES } from './data/cities_fetched';
 
-
-// Hjälpkomponent för att flytta kartan när man byter stad
 function MapUpdater({ center }) {
   const map = useMap();
   useEffect(() => {
-    map.flyTo(center, 13); // Animerar kameran till den nya staden
+    map.flyTo(center, 13);
   }, [center, map]);
   return null;
 }
@@ -23,7 +21,6 @@ function HeatmapLayer({ points }) {
     if (!map || !points) return;
     
     import('leaflet.heat').then(() => {
-      // Ta bort gamla heatmap-lager först
       map.eachLayer((layer) => {
         if (layer._heat) {
           map.removeLayer(layer);
@@ -50,6 +47,26 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   
   const [selectedCity, setSelectedCity] = useState(CITIES[0]);
+  
+  // --- Nya state-variabler för Autocomplete ---
+  const [cityInput, setCityInput] = useState(CITIES[0].name);
+  const [filteredCities, setFilteredCities] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  
+  const autocompleteRef = useRef(null); // För att kunna stänga menyn när man klickar utanför
+
+  // Stäng autocomplete-menyn om man klickar någon annanstans på sidan
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (autocompleteRef.current && !autocompleteRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+        // Återställ input-texten till den valda staden om användaren klickar bort
+        setCityInput(selectedCity.name); 
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [selectedCity]);
 
   const handleSearch = async () => {
     if (!searchQuery) return; 
@@ -58,14 +75,52 @@ export default function App() {
     setBarData([]);
 
     try {
+      let currentAreaId = selectedCity.areaId;
+
+      if (!currentAreaId) {
+        console.log(`Hämtar areaId för ${selectedCity.name}...`);
+        
+        const baseUrl = "https://nominatim.openstreetmap.org/search";
+        const params = "&format=json";
+        let relation = null;
+
+        // STEG 1: Försök söka efter platsen som en stad (city)
+        let response = await fetch(`${baseUrl}?city=${encodeURIComponent(selectedCity.name)}${params}`);
+        if (!response.ok) throw new Error("Kunde inte nå Nominatim API");
+        let data = await response.json();
+        relation = data.find(item => item.osm_type === 'relation');
+
+        // STEG 2: Fallback för stadsstater/emirat (t.ex. Dubai) - sök som delstat (state)
+        if (!relation) {
+          console.warn(`Hittade ingen stads-relation för ${selectedCity.name}, letar efter delstat...`);
+          let fallbackResponse = await fetch(`${baseUrl}?state=${encodeURIComponent(selectedCity.name)}${params}`);
+          let fallbackData = await fallbackResponse.json();
+          relation = fallbackData.find(item => item.osm_type === 'relation');
+        }
+
+        // STEG 3: Sista utvägen - gör en helt fri sökning (q)
+        if (!relation) {
+          console.warn(`Hittade ingen delstats-relation för ${selectedCity.name}, gör en fri sökning...`);
+          let broadResponse = await fetch(`${baseUrl}?q=${encodeURIComponent(selectedCity.name)}${params}`);
+          let broadData = await broadResponse.json();
+          relation = broadData.find(item => item.osm_type === 'relation');
+        }
+
+        if (relation) {
+          currentAreaId = 3600000000 + parseInt(relation.osm_id);
+          setSelectedCity(prevCity => ({ ...prevCity, areaId: currentAreaId }));
+        } else {
+          throw new Error(`Kunde inte hitta en administrativ yta (OSM-relation) för ${selectedCity.name}.`);
+        }
+      }
+
+      // Skicka till backend för Overpass-sökningen
       const response = await fetch('http://localhost:5001/api/run-script', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           query: searchQuery,
-          areaId: selectedCity.areaId 
+          areaId: currentAreaId 
         }) 
       });
 
@@ -79,61 +134,120 @@ export default function App() {
 
     } catch (error) {
       console.error("Fel vid kommunikation:", error);
+      alert(error.message);
     } finally {
       setIsSearching(false);
     }
   };
 
-  const handleCityChange = (event) => {
-    const cityName = event.target.value;
-    const newCity = CITIES.find(city => city.name === cityName);
-    if (newCity) {
-      setSelectedCity(newCity);
+  // --- Funktioner för att hantera Autocomplete-logiken ---
+  const handleCityInputChange = (e) => {
+    const value = e.target.value;
+    setCityInput(value);
+    
+    if (value.trim().length > 0) {
+      const filtered = CITIES.filter(city => 
+        city.name.toLowerCase().includes(value.toLowerCase())
+      );
+      setFilteredCities(filtered);
+    } else {
+      setFilteredCities(CITIES);
     }
+    setShowSuggestions(true);
+  };
+
+  const handleCitySelect = (city) => {
+    setSelectedCity(city);
+    setCityInput(city.name);
+    setShowSuggestions(false);
+    setBarData([]); // Rensa heatmap
   };
 
   return (
-    // Nu använder vi position: relative så att kartan täcker allt och gränssnittet svävar ovanpå
     <div style={{ position: 'relative', height: '100vh', width: '100vw' }}>
       
-      {/* VÄNSTER: FLYTANDE STADSMENY */}
-      <div style={{ 
-        position: 'absolute', 
-        top: '20px', 
-        left: '60px', // Flyttad lite till höger så den inte döljer zoom-knapparna
-        zIndex: 1000,
-        backgroundColor: 'white',
-        padding: '10px',
-        borderRadius: '8px',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px'
-      }}>
+      {/* VÄNSTER: AUTOCOMPLETE STADS-SÖK */}
+      <div 
+        ref={autocompleteRef}
+        style={{ 
+          position: 'absolute', 
+          top: '20px', 
+          left: '60px', 
+          zIndex: 1000,
+          backgroundColor: 'white',
+          padding: '10px',
+          borderRadius: '8px',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px'
+        }}
+      >
         <label style={{ fontWeight: 'bold', color: '#333' }}>Stad:</label>
-        <select 
-          value={selectedCity.name} 
-          onChange={handleCityChange}
-          style={{
-            padding: '8px',
-            borderRadius: '4px',
-            border: '1px solid #ccc',
-            fontSize: '14px',
-            cursor: 'pointer',
-            outline: 'none',
-            backgroundColor: 'white',
-            color: '#333'
-          }}
-        >
-          {CITIES.map(city => (
-            <option key={city.name} value={city.name}>
-              {city.name}
-            </option>
-          ))}
-        </select>
+        <div style={{ position: 'relative' }}>
+          <input 
+            type="text"
+            value={cityInput}
+            onChange={handleCityInputChange}
+            onFocus={() => {
+              setFilteredCities(CITIES);
+              setShowSuggestions(true);
+            }}
+            placeholder="Sök efter stad..."
+            style={{
+              padding: '8px',
+              borderRadius: '4px',
+              border: '1px solid #ccc',
+              fontSize: '14px',
+              width: '180px',
+              outline: 'none'
+            }}
+          />
+          
+          {/* Autocomplete-dropdown */}
+          {showSuggestions && (
+            <ul style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              width: '100%',
+              maxHeight: '250px',
+              overflowY: 'auto',
+              backgroundColor: 'white',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              marginTop: '4px',
+              padding: 0,
+              margin: 0,
+              listStyle: 'none',
+              boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+              zIndex: 1001 // Måste vara över andra element
+            }}>
+              {filteredCities.length > 0 ? (
+                filteredCities.slice(0, 6).map(city => (
+                  <li 
+                    key={city.name}
+                    onMouseDown={() => handleCitySelect(city)} // onMouseDown triggas innan input-fältets onBlur
+                    style={{
+                      padding: '8px 12px',
+                      cursor: 'pointer',
+                      borderBottom: '1px solid #eee'
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = '#f0f0f0'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                  >
+                    {city.name}
+                  </li>
+                ))
+              ) : (
+                <li style={{ padding: '8px 12px', color: '#888' }}>Ingen stad hittades</li>
+              )}
+            </ul>
+          )}
+        </div>
       </div>
 
-      {/* HÖGER: SÖKFÄLT (Oförändrad layout, men svävar över kartan) */}
+      {/* HÖGER: OSM SÖKFÄLT */}
       <div style={{
         position: 'absolute', top: '20px', right: '20px', zIndex: 1000, 
         backgroundColor: 'white', padding: '10px', borderRadius: '8px',
@@ -166,8 +280,8 @@ export default function App() {
         style={{ height: '100%', width: '100%' }}
       >
         <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; OpenStreetMap contributors'
+          url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+          attribution='&copy; Google Maps'
         />
         <MapUpdater center={[selectedCity.lat, selectedCity.lon]} />
         <HeatmapLayer points={barData} />
