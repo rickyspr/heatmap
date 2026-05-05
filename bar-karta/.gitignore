@@ -1,0 +1,21 @@
+# Node.js - Biblioteken för React (detta är den viktigaste raden!)
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Python - Virtuella miljöer och cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.env
+
+# Operativsystem - Specifikt för Mac
+.DS_Store
+Thumbs.db
+
+# Temporära filer från din datainsamling
+public/bars.json
