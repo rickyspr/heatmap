@@ -5,23 +5,23 @@ import csv
 import os
 
 def generate_cities_file():
-    # Ändrad från cities50000 till cities15000 (GeoNames har ingen fil för just 50k)
+    # Changed from cities50000 to cities15000 (GeoNames doesn't have a file for exactly 50k)
     url = "http://download.geonames.org/export/dump/cities15000.zip"
-    print(f"Laddar ner data från {url}...")
+    print(f"Downloading data from {url}...")
     
-    # Hämta filen
+    # Fetch the file
     response = requests.get(url)
     response.raise_for_status()
     
-    print("Extraherar och bearbetar data...")
-    # Läs zip-filen direkt från minnet
+    print("Extracting and processing data...")
+    # Read the zip file directly from memory
     with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-        # Filen inuti zip-arkivet heter nu cities15000.txt
+        # The file inside the zip archive is now named cities15000.txt
         with z.open('cities15000.txt') as f:
             content = f.read().decode('utf-8')
             
     cities = []
-    # Filen är tab-separerad (TSV)
+    # The file is tab-separated (TSV)
     reader = csv.reader(content.splitlines(), delimiter='\t')
     
     for row in reader:
@@ -31,7 +31,7 @@ def generate_cities_file():
         lon = float(row[5])
         population = int(row[14])
         
-        # Säkerhetskontroll: Vi sparar BARA städer med minst 50 000 invånare
+        # Safety check: We only save cities with at least 50,000 inhabitants
         if population >= 50000:
             cities.append({
                 'name': safe_name,
@@ -39,7 +39,7 @@ def generate_cities_file():
                 'lon': lon
             })
             
-    # Skapa output-filen i det önskade formatet
+    # Create the output file in the desired format
     script_dir = os.path.dirname(os.path.abspath(__file__))
     output_file = os.path.join(script_dir, "cities_fetched.js")
     with open(output_file, 'w', encoding='utf-8') as out:
@@ -48,7 +48,7 @@ def generate_cities_file():
             out.write(f"  {{ name: '{city['name']}', lat: {city['lat']:.4f}, lon: {city['lon']:.4f} }},\n")
         out.write("];\n")
         
-    print(f"Klart! {len(cities)} städer sparades framgångsrikt i '{output_file}'.")
+    print(f"Done! {len(cities)} cities were successfully saved in '{output_file}'.")
 
 if __name__ == "__main__":
     generate_cities_file()

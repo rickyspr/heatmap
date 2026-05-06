@@ -1,1 +1,1 @@
-// For some resason this emty file is important
+// For some reason this empty file is important

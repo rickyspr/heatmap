@@ -10,14 +10,14 @@ def handle_search():
     data = request.get_json()
     search_query = data.get('query', 'bar|pub') 
     
-    # Ta emot areaId från React (Standard är Paris area-id om inget skickas)
+    # Receive areaId from React (Standard is Paris area-id if nothing is sent)
     area_id = data.get('areaId', '3600071525')
     
-    print(f"Hämtar data för '{search_query}' i område {area_id} via OSM...")
+    print(f"Fetching data for '{search_query}' in area {area_id} via OSM...")
     
     url = "http://overpass-api.de/api/interpreter"
     
-    # Använd det dynamiska area_id:t i sökningen
+    # Use the dynamic area_id in the search
     query = f"""
     [out:json][timeout:90];
     area(id:{area_id})->.searchArea;
@@ -43,7 +43,7 @@ def handle_search():
                 if lat and lon:
                     points_data.append([lat, lon, 1])
                     
-            print(f"Hittade {len(points_data)} resultat!")
+            print(f"Found {len(points_data)} results!")
             return jsonify({
                 "status": "success",
                 "points": points_data
@@ -51,13 +51,13 @@ def handle_search():
         else:
             return jsonify({
                 "status": "error",
-                "message": f"Kunde inte hämta data. Statuskod: {response.status_code}"
+                "message": f"Could not fetch data. Status code: {response.status_code}"
             }), 500
             
     except requests.exceptions.Timeout:
         return jsonify({
             "status": "error",
-            "message": "Overpass-servern tog för lång tid på sig (Timeout)."
+            "message": "Overpass server took too long (Timeout)."
         }), 504
 
 if __name__ == '__main__':

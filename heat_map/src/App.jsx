@@ -3,11 +3,11 @@ import { MapContainer, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// Antag att denna fil innehåller en array: export const CITIES = [{ name: 'Stockholm', lat: 59.32, lon: 18.06, areaId: 3600052463 }, ...]
+// Assume this file contains an array: export const CITIES = [{ name: 'Stockholm', lat: 59.32, lon: 18.06, areaId: 3600052463 }, ...]
 import { CITIES } from './data/cities_fetched';
-import { SEARCH_KEYWORDS } from './data/search_keywords'; // Om du har en separat fil för sökord
+import { SEARCH_KEYWORDS } from './data/search_keywords'; // If you have a separate file for search keywords
 
-// --- HJÄLPKOMPONENTER FÖR KARTAN ---
+// --- HELPER COMPONENTS FOR THE MAP ---
 
 function MapUpdater({ center }) {
   const map = useMap();
@@ -28,32 +28,33 @@ function HeatmapLayer({ points }) {
         if (layer._heat) map.removeLayer(layer);
       });
 
-      // --- LOGIK FÖR RELATIVITET ---
-      // Om vi har massor av punkter (restauranger), behöver vi ett högre 'max' 
-      // för att inte hela kartan ska bli röd direkt.
-      // Om vi har få punkter (bibliotek), sänker vi 'max' så att även små 
-      // kluster ser "heta" ut.
+      // --- LOGIC FOR RELATIVITY ---
+      // If we have lots of points (restaurants), we need a higher 'max' 
+      // so the entire map doesn't turn red immediately.
+      // If we have few points (libraries), we lower 'max' so that even small 
+      // clusters look "hot".
       
       const pointCount = points.length;
       let dynamicMax = 1.0;
 
       if (pointCount > 1000) {
-        dynamicMax = 15; // Kräv mycket överlapp för rött (t.ex. Manhattan)
-      } else if (pointCount > 500) {
-        dynamicMax = 8;
-      } else if (pointCount < 50) {
-        dynamicMax = 0.5; // Gör gles data mycket tydligare
+        dynamicMax = 15; // Require much overlap for red (e.g. Manhattan)
+      } else if (pointCount > 100) {
+        dynamicMax = 8; // Some overlap is needed (i.e Gothenburg)
       } else {
         dynamicMax = 2.0;
       }
 
       L.heatLayer(points, {
-        radius: 100,      // Något mindre radius gör det oftast lättare att se kluster
+        radius: 100,      // Big radius to indicate bigger areas rather than individual points
         blur: 15,   
         maxZoom: 17,
-        max: dynamicMax, // Här sker magin!
-        gradient: { 
-          0.6: 'yellow',   // Inget syns under 40% av lokalt max (tar bort molnet)
+        max: dynamicMax, // max is different based on how many points we have, to keep the heatmap informative
+        gradient: { // The color gradient for the heatmap, from blue (cool) to red (hot)
+          0.0: 'blue', 
+          0.2: 'cyan', 
+          0.4: 'lime',
+          0.6: 'yellow',
           0.7: 'orange', 
           1.0: 'red' 
         }
@@ -64,7 +65,7 @@ function HeatmapLayer({ points }) {
   return null;
 }
 
-// --- GENERISK DROPDOWN-KOMPONENT ---
+// --- GENERIC DROPDOWN COMPONENT ---
 
 function AutocompleteDropdown({ items, onSelect, displayKey, visible }) {
   if (!visible) return null;
@@ -80,7 +81,7 @@ function AutocompleteDropdown({ items, onSelect, displayKey, visible }) {
         items.map((item, index) => (
           <li 
             key={index}
-            onMouseDown={() => onSelect(item)} // Triggas före onBlur
+            onMouseDown={() => onSelect(item)} // Triggered before onBlur
             style={{
               padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid #eee',
               fontSize: '14px', color: '#333', textAlign: 'left'
@@ -92,13 +93,13 @@ function AutocompleteDropdown({ items, onSelect, displayKey, visible }) {
           </li>
         ))
       ) : (
-        <li style={{ padding: '10px 12px', color: '#999', fontSize: '13px' }}>Inga träffar...</li>
+        <li style={{ padding: '10px 12px', color: '#999', fontSize: '13px' }}>No matches...</li>
       )}
     </ul>
   );
 }
 
-// --- HUVUDAPPLIKATION ---
+// --- MAIN APPLICATION ---
 
 export default function App() {
   // Map/Data states
@@ -106,19 +107,19 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [selectedCity, setSelectedCity] = useState(CITIES[0]);
 
-  // Vänster: Stad-sök
+  // Left: City search
   const [cityInput, setCityInput] = useState(CITIES[0].name);
   const [filteredCities, setFilteredCities] = useState([]);
   const [showCitySuggestions, setShowCitySuggestions] = useState(false);
   const cityRef = useRef(null);
 
-  // Höger: Sökords-sök
+  // Right: Search keywords
   const [searchQuery, setSearchQuery] = useState(''); 
   const [filteredKeywords, setFilteredKeywords] = useState([]);
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const searchRef = useRef(null);
 
-  // Stäng dropdowns om man klickar utanför
+  // Close dropdowns when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (cityRef.current && !cityRef.current.contains(event.target)) {
@@ -133,7 +134,7 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [selectedCity]);
 
-  // Logik för stads-input
+  // Logic for city input
   const handleCityChange = (e) => {
     const val = e.target.value;
     setCityInput(val);
@@ -142,7 +143,7 @@ export default function App() {
     setShowCitySuggestions(true);
   };
 
-  // Logik för sökords-input
+  // Logic for search keywords input
   const handleQueryChange = (e) => {
     const val = e.target.value;
     setSearchQuery(val);
@@ -159,7 +160,7 @@ export default function App() {
     try {
       let currentAreaId = selectedCity.areaId;
 
-      // Om areaId saknas, hämta via Nominatim
+      // If areaId is missing, fetch via Nominatim
       if (!currentAreaId) {
         const response = await fetch(`https://nominatim.openstreetmap.org/search?city=${encodeURIComponent(selectedCity.name)}&format=json`);
         const data = await response.json();
@@ -167,11 +168,11 @@ export default function App() {
         if (relation) {
           currentAreaId = 3600000000 + parseInt(relation.osm_id);
         } else {
-          throw new Error("Kunde inte hitta administrativt område.");
+          throw new Error("Could not find administrative area.");
         }
       }
 
-      const response = await fetch('http://localhost:5001/api/run-script', {
+      const response = await fetch('https://heatmap-cogt.onrender.com/api/run-script', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: searchQuery, areaId: currentAreaId }) 
@@ -181,11 +182,11 @@ export default function App() {
       if (result.status === "success") {
         setBarData(result.points);
       } else {
-        alert("Fel: " + result.message);
+        alert("Error: " + result.message);
       }
     } catch (error) {
       console.error(error);
-      alert("Kunde inte hämta data.");
+      alert("Could not fetch data.");
     } finally {
       setIsSearching(false);
     }
@@ -194,16 +195,16 @@ export default function App() {
   return (
     <div style={{ position: 'relative', height: '100vh', width: '100vw', fontFamily: 'sans-serif' }}>
       
-      {/* KONTROLLPANEL VÄNSTER (STAD) */}
+      {/* CONTROL PANEL LEFT (CITY) */}
       <div ref={cityRef} style={panelStyle({ left: '60px' })}>
-        <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#666' }}>STAD</span>
+        <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#666' }}>CITY</span>
         <div style={{ position: 'relative' }}>
           <input 
             type="text"
             value={cityInput}
             onChange={handleCityChange}
             onFocus={() => { setFilteredCities(CITIES); setShowCitySuggestions(true); }}
-            placeholder="Välj stad..."
+            placeholder="Select city..."
             style={inputStyle}
           />
           <AutocompleteDropdown 
@@ -220,7 +221,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* KONTROLLPANEL HÖGER (SÖKORD) */}
+      {/* CONTROL PANEL RIGHT (SEARCH KEYWORDS) */}
       <div ref={searchRef} style={panelStyle({ right: '20px' })}>
         <div style={{ position: 'relative' }}>
           <input 
@@ -228,7 +229,7 @@ export default function App() {
             value={searchQuery}
             onChange={handleQueryChange}
             onFocus={() => { setFilteredKeywords(SEARCH_KEYWORDS); setShowSearchSuggestions(true); }}
-            placeholder={`Sök i ${selectedCity.name}...`}
+            placeholder={`Search in ${selectedCity.name}...`}
             style={inputStyle}
           />
           <AutocompleteDropdown 
@@ -245,18 +246,18 @@ export default function App() {
           disabled={isSearching}
           style={buttonStyle(isSearching)}
         >
-          {isSearching ? 'Söker...' : 'Sök'}
+          {isSearching ? 'Searching...' : 'Search'}
         </button>
       </div>
 
-      {/* KARTKOMPONENT */}
+      {/* MAP COMPONENT */}
       <MapContainer 
         center={[selectedCity.lat, selectedCity.lon]} 
         zoom={13} 
         style={{ height: '100%', width: '100%', zIndex: 1 }}
       >
         <TileLayer
-          url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+          url="https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}"
           attribution='&copy; Google Maps'
         />
         <MapUpdater center={[selectedCity.lat, selectedCity.lon]} />
@@ -267,7 +268,7 @@ export default function App() {
   );
 }
 
-// --- STILAR ---
+// --- STYLES ---
 
 const panelStyle = (position) => ({
   position: 'absolute', 
