@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MapContainer, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, useMap, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -7,13 +7,16 @@ import 'leaflet/dist/leaflet.css';
 import { CITIES } from './data/cities_fetched';
 import { SEARCH_KEYWORDS } from './data/search_keywords'; // If you have a separate file for search keywords
 
+
 // --- HELPER COMPONENTS FOR THE MAP ---
 
-function MapUpdater({ center }) {
+function MapUpdater({ center, zoom }) {
   const map = useMap();
   useEffect(() => {
-    map.flyTo(center, 13);
-  }, [center, map]);
+    map.flyTo(center, zoom, {
+      duration: 0.25 // makes the movement smooth and nice
+    });
+  }, [center, zoom, map]);
   return null;
 }
 
@@ -104,8 +107,12 @@ function AutocompleteDropdown({ items, onSelect, displayKey, visible }) {
 export default function App() {
   // Map/Data states
   const [barData, setBarData] = useState([]);
+  const [clusters, setClusters] = useState([]); // For clusters 
   const [isSearching, setIsSearching] = useState(false);
   const [selectedCity, setSelectedCity] = useState(CITIES[0]);
+  // To control map view (center and zoom) based on clusters
+  const [viewCenter, setViewCenter] = useState([selectedCity.lat, selectedCity.lon]);
+  const [zoomLevel, setZoomLevel] = useState(13); // Vi kan även kontrollera zoom
 
   // Left: City search
   const [cityInput, setCityInput] = useState(CITIES[0].name);
@@ -118,6 +125,8 @@ export default function App() {
   const [filteredKeywords, setFilteredKeywords] = useState([]);
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const searchRef = useRef(null);
+
+  
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -172,7 +181,7 @@ export default function App() {
         }
       }
 
-      const response = await fetch('https://heatmap-cogt.onrender.com/api/run-script', {
+      const response = await fetch('https://heatmap-cogt.onrender.com/api/run-script', { // For testing: 'http://localhost:5000/api/run-script' for comercial https://heatmap-cogt.onrender.com/api/run-script
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: searchQuery, areaId: currentAreaId }) 
@@ -181,6 +190,7 @@ export default function App() {
       const result = await response.json();
       if (result.status === "success") {
         setBarData(result.points);
+        setClusters(result.clusters || []); // Saves clusters
       } else {
         alert("Error: " + result.message);
       }
@@ -215,7 +225,14 @@ export default function App() {
               setSelectedCity(city);
               setCityInput(city.name);
               setShowCitySuggestions(false);
+              
+              // --- FIX: Uppdatera kartans position till den nya staden ---
+              setViewCenter([city.lat, city.lon]);
+              setZoomLevel(13); 
+              
+              // Rensa gammal data så det blir tydligt att vi bytt stad
               setBarData([]); 
+              setClusters([]); 
             }}
           />
         </div>
@@ -251,19 +268,56 @@ export default function App() {
       </div>
 
       {/* MAP COMPONENT */}
+      {/* MAP COMPONENT */}
       <MapContainer 
-        center={[selectedCity.lat, selectedCity.lon]} 
-        zoom={13} 
+        center={viewCenter} 
+        zoom={zoomLevel} 
         style={{ height: '100%', width: '100%', zIndex: 1 }}
       >
         <TileLayer
           url="https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}"
           attribution='&copy; Google Maps'
         />
-        <MapUpdater center={[selectedCity.lat, selectedCity.lon]} />
+        
+        {/* Uppdaterad MapUpdater så den faktiskt lyssnar på dina klick! */}
+        <MapUpdater center={viewCenter} zoom={zoomLevel} />
+        
         <HeatmapLayer points={barData} />
+
+        {/* FLYTTAD: Markörerna MÅSTE ligga inuti MapContainer! */}
+        {clusters.map((cluster) => (
+          <Marker position={cluster.center} key={cluster.id}>
+            <Popup>
+              <strong>{cluster.name}</strong><br />
+              {cluster.count} ställen hittade här.
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
       
+      {/* NY PANEL FÖR RESULTAT/BARGATOR (Denna ska ligga utanför kartan) */}
+      {clusters.length > 0 && (
+        <div style={panelStyle({ bottom: '20px', left: '20px', flexDirection: 'column', alignItems: 'flex-start', maxHeight: '400px', overflowY: 'auto' })}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '16px' }}>Heta Områden</h3>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, width: '100%' }}>
+            {clusters.map((cluster) => (
+              <li key={cluster.id} 
+                  style={{ padding: '10px', borderBottom: '1px solid #eee', cursor: 'pointer', transition: 'background 0.2s' }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#f9f9f9'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                  onClick={() => {
+                    setViewCenter(cluster.center); // Flytta kartan!
+                    setZoomLevel(16);             // Zooma in på gatan
+                  }}
+              >
+                <strong>{cluster.name}</strong>
+                <div style={{ fontSize: '12px', color: '#666' }}>{cluster.count} träffar</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
     </div>
   );
 }
