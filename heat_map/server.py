@@ -14,8 +14,8 @@ def handle_search():
     data = request.get_json()
     search_query = data.get('query', 'bar|pub') 
     area_id = data.get('areaId', '3600071525')
-    
-    print(f"Hämtar data för '{search_query}' i område {area_id}...")
+
+    print(f"Getting data for '{search_query}' in area {area_id}...")
     url = "http://overpass-api.de/api/interpreter"
     
     query = f"""
